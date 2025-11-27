@@ -225,31 +225,89 @@ else:
             
             with tab1:
                 st.subheader("Prediction Results")
-                if st.button("🚀 Run Prediction", key="predict_btn"):
-                    with st.spinner("Processing..."):
-                        X, unit_ids = prepare_sequences(df, 50, sensor_cols)
-                        if X is not None:
-                            preds = model.predict(X, verbose=0).flatten()
-                            results = pd.DataFrame({"unit": unit_ids, "Predicted_RUL": preds})
-                            
-                            # Metrics
-                            avg_rul = results["Predicted_RUL"].mean()
-                            min_rul = results["Predicted_RUL"].min()
-                            critical = results[results["Predicted_RUL"] < 50].shape[0]
-                            
-                            c1, c2, c3 = st.columns(3)
-                            c1.metric("Avg RUL", f"{avg_rul:.1f}")
-                            c2.metric("Min RUL", f"{min_rul:.1f}")
-                            c3.metric("Critical (<50)", f"{critical}", delta_color="inverse")
-                            
-                            # Chart
-                            fig = px.bar(results, x="unit", y="Predicted_RUL", color="Predicted_RUL", color_continuous_scale="RdYlGn", title="RUL per Engine")
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            st.session_state["results"] = results
-                            st.session_state["df"] = df
-                        else:
-                            st.error("Sequence preparation failed.")
+                
+                # Check if results already exist in session state to avoid re-running on every interaction
+                if "results" not in st.session_state:
+                    if st.button("🚀 Run Prediction", key="predict_btn"):
+                        with st.spinner("Processing..."):
+                            X, unit_ids = prepare_sequences(df, 50, sensor_cols)
+                            if X is not None:
+                                preds = model.predict(X, verbose=0).flatten()
+                                results = pd.DataFrame({"unit": unit_ids, "Predicted_RUL": preds})
+                                st.session_state["results"] = results
+                                st.session_state["df"] = df
+                            else:
+                                st.error("Sequence preparation failed.")
+                
+                if "results" in st.session_state:
+                    results = st.session_state["results"]
+                    
+                    # --- Metrics ---
+                    avg_rul = results["Predicted_RUL"].mean()
+                    min_rul = results["Predicted_RUL"].min()
+                    critical_count = results[results["Predicted_RUL"] < 50].shape[0]
+                    warning_count = results[(results["Predicted_RUL"] >= 50) & (results["Predicted_RUL"] < 100)].shape[0]
+                    healthy_count = results[results["Predicted_RUL"] >= 100].shape[0]
+                    
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Avg RUL", f"{avg_rul:.1f}")
+                    m2.metric("Min RUL", f"{min_rul:.1f}")
+                    m3.metric("Critical (<50)", f"{critical_count}", delta_color="inverse")
+                    m4.metric("Healthy (>100)", f"{healthy_count}")
+                    
+                    st.markdown("---")
+                    
+                    # --- Visualizations ---
+                    col_charts_1, col_charts_2 = st.columns(2)
+                    
+                    with col_charts_1:
+                        st.markdown("##### 📊 RUL Distribution")
+                        fig_hist = px.histogram(results, x="Predicted_RUL", nbins=20, title="RUL Histogram", color_discrete_sequence=['#636EFA'])
+                        st.plotly_chart(fig_hist, use_container_width=True)
+                        
+                    with col_charts_2:
+                        st.markdown("##### 🥧 Fleet Health Status")
+                        health_df = pd.DataFrame({
+                            "Status": ["Critical", "Warning", "Healthy"],
+                            "Count": [critical_count, warning_count, healthy_count]
+                        })
+                        fig_pie = px.pie(health_df, names="Status", values="Count", title="Engine Health Overview", 
+                                         color="Status", color_discrete_map={"Critical":"red", "Warning":"orange", "Healthy":"green"})
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                    
+                    st.markdown("##### 📉 RUL per Engine")
+                    fig_bar = px.bar(results, x="unit", y="Predicted_RUL", color="Predicted_RUL", 
+                                     color_continuous_scale="RdYlGn", title="Predicted RUL by Unit ID")
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                    
+                    # --- Interactive Data Table ---
+                    st.markdown("---")
+                    st.subheader("📋 Detailed Engine Status")
+                    
+                    filter_status = st.multiselect("Filter by Status:", ["Critical", "Warning", "Healthy"], default=["Critical"])
+                    
+                    def get_status(rul):
+                        if rul < 50: return "Critical"
+                        elif rul < 100: return "Warning"
+                        return "Healthy"
+                    
+                    results["Status"] = results["Predicted_RUL"].apply(get_status)
+                    
+                    if filter_status:
+                        filtered_results = results[results["Status"].isin(filter_status)].sort_values("Predicted_RUL")
+                    else:
+                        filtered_results = results.sort_values("Predicted_RUL")
+                        
+                    st.dataframe(filtered_results, use_container_width=True)
+                    
+                    # Download
+                    csv = results.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Predictions as CSV",
+                        data=csv,
+                        file_name=f'rul_predictions_{selected_dataset}.csv',
+                        mime='text/csv',
+                    )
 
             with tab2:
                 if "df" in st.session_state:
