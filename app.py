@@ -254,11 +254,28 @@ else:
             with tab2:
                 if "df" in st.session_state:
                     df_d = st.session_state["df"]
-                    u = st.selectbox("Unit", sorted(df_d["unit"].unique()))
-                    s = st.multiselect("Sensors", sensor_cols, default=sensor_cols[:3])
+                    
+                    c1, c2 = st.columns([1, 3])
+                    with c1:
+                        u = st.selectbox("Unit", sorted(df_d["unit"].unique()))
+                        plot_type = st.selectbox("Plot Type", ["Line Chart", "Scatter Plot", "Histogram", "Box Plot"])
+                    
+                    with c2:
+                        s = st.multiselect("Sensors", sensor_cols, default=sensor_cols[:3])
+                    
                     if s:
                         d = df_d[df_d["unit"] == u]
-                        st.plotly_chart(px.line(d, x="cycle", y=s, title=f"Unit {u} Sensors"), use_container_width=True)
+                        
+                        if plot_type == "Line Chart":
+                            fig = px.line(d, x="cycle", y=s, title=f"Unit {u} Sensor Trends")
+                        elif plot_type == "Scatter Plot":
+                            fig = px.scatter(d, x="cycle", y=s, title=f"Unit {u} Sensor Scatter")
+                        elif plot_type == "Histogram":
+                            fig = px.histogram(d, x=s, title=f"Unit {u} Sensor Distribution", barmode="overlay")
+                        elif plot_type == "Box Plot":
+                            fig = px.box(d, y=s, title=f"Unit {u} Sensor Summary")
+                            
+                        st.plotly_chart(fig, use_container_width=True)
             
             with tab3:
                 st.dataframe(df.head())
